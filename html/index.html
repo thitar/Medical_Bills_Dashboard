@@ -29,6 +29,7 @@
     --accent-pid: #ff922b;
     --accent-noncns: #da77f2;
     --accent-cnsrpt: #20c997;
+    --accent-dkvrpt: #f783ac;
     --radius: 10px;
     --radius-sm: 6px;
     --shadow: 0 2px 12px rgba(0,0,0,0.25);
@@ -47,8 +48,20 @@
     line-height: 1.5;
   }
 
-  /* ── Layout ── */
-  .app { max-width: 1200px; margin: 0 auto; padding: 2rem 1.5rem; }
+  /* ── Layout ──
+     Fluid width instead of the old fixed 1200px "middle column" feel.
+     90% of the viewport, capped so it doesn't get absurd on ultrawide
+     monitors, and widened back out to ~95% on small screens so the
+     side margins don't eat all the space on a phone. */
+  .app {
+    width: 90%;
+    max-width: 2200px;
+    margin: 0 auto;
+    padding: 2rem 2rem;
+  }
+  @media (max-width: 900px) {
+    .app { width: 95%; padding: 1.5rem 1rem; }
+  }
 
   /* ── Header ── */
   header { margin-bottom: 2.5rem; }
@@ -68,7 +81,7 @@
     display: flex;
     gap: 0.75rem;
     align-items: end;
-    margin-bottom: 2rem;
+    margin-bottom: 1.5rem;
     flex-wrap: wrap;
   }
   .field { display: flex; flex-direction: column; gap: 0.3rem; }
@@ -108,6 +121,13 @@
   button.btn-primary:hover { filter: brightness(1.15); }
   button.btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
 
+  button.btn-clear {
+    background: transparent;
+    border: 1px solid var(--border-light);
+    color: var(--text-dim);
+  }
+  button.btn-clear:hover { color: var(--text); border-color: var(--text-dim); }
+
   .connect-status {
     font-size: 0.8rem;
     padding: 0.3rem 0;
@@ -116,6 +136,31 @@
   }
   .connect-status.ok { color: var(--accent-done); }
   .connect-status.err { color: #ff6b6b; }
+
+  /* ── Search bar ──
+     Separate row from the connect bar so it doesn't get crowded.
+     Filters the pipeline columns below as you type (live, no button). */
+  .search-bar {
+    display: flex;
+    gap: 0.75rem;
+    align-items: end;
+    margin-bottom: 2rem;
+    flex-wrap: wrap;
+  }
+  .field-search input { width: 420px; max-width: 100%; }
+  .search-status {
+    font-size: 0.8rem;
+    color: var(--text-dim);
+    font-family: var(--mono);
+    padding: 0.55rem 0;
+  }
+  /* Highlighted search matches inside titles / snippets / correspondent */
+  mark {
+    background: var(--accent-warn);
+    color: #000;
+    padding: 0 2px;
+    border-radius: 2px;
+  }
 
   /* ── Summary cards ── */
   .summary {
@@ -129,9 +174,18 @@
     border: 1px solid var(--border);
     border-radius: var(--radius);
     padding: 1rem 1.1rem;
-    transition: background 0.2s;
+    transition: background 0.2s, box-shadow 0.2s;
+    cursor: pointer; /* NEW: cards are clickable "instant filters" */
+    user-select: none;
   }
   .summary-card:hover { background: var(--bg-card-hover); }
+  /* NEW: highlight whichever summary card's filter is currently applied
+     to the pipeline below. Ring instead of changing the border color so
+     it doesn't clash with each card's own left-border accent color. */
+  .summary-card.active {
+    box-shadow: 0 0 0 2px var(--text);
+    background: var(--bg-card-hover);
+  }
   .summary-card .label {
     font-size: 0.7rem;
     font-weight: 500;
@@ -160,17 +214,54 @@
   .card-total { border-left: 3px solid var(--text-dim); }
   .card-total .value { color: var(--text); }
 
-  /* ── Kanban-like columns ── */
+  /* ── Kanban-like columns ──
+     Fixed at 6 columns (dropped cns-reimbursed — see WORKFLOWS
+     comment in the script) so all 6 pipeline stages sit in
+     one row without wrapping, instead of auto-fit. The whole .app
+     container is wider now (90%) to give each column real room.
+     Falls back to 1 column on phones (media query near the bottom
+     of this file). NOTE: when a summary-card filter is active (see
+     the "Instant filter" section in the JS below), render() sets an
+     inline grid-template-columns on the .columns element so the
+     fewer remaining columns stretch to fill the row instead of
+     leaving empty space on the right — that inline style takes
+     priority over this rule whenever it's present. */
   .pipeline { margin-bottom: 2rem; }
+  .pipeline-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 1rem;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
   .pipeline h2 {
     font-size: 1.05rem;
     font-weight: 600;
-    margin-bottom: 1rem;
     letter-spacing: -0.02em;
   }
+  .filter-status {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.78rem;
+    color: var(--text-dim);
+  }
+  .filter-status button {
+    font-family: var(--font);
+    font-size: 0.75rem;
+    font-weight: 600;
+    padding: 0.25rem 0.6rem;
+    border-radius: 999px;
+    border: 1px solid var(--border-light);
+    background: transparent;
+    color: var(--text-dim);
+    cursor: pointer;
+  }
+  .filter-status button:hover { color: var(--text); border-color: var(--text-dim); }
   .columns {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    grid-template-columns: repeat(6, 1fr);
     gap: 0.75rem;
     align-items: start;
   }
@@ -178,38 +269,40 @@
     background: var(--bg-card);
     border: 1px solid var(--border);
     border-radius: var(--radius);
-    padding: 0.85rem;
-    min-height: 120px;
+    padding: 1rem;
+    min-height: 160px;
   }
   .column-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    margin-bottom: 0.75rem;
-    padding-bottom: 0.6rem;
+    margin-bottom: 0.9rem;
+    padding-bottom: 0.7rem;
     border-bottom: 1px solid var(--border);
   }
   .column-header .col-title {
-    font-size: 0.75rem;
+    font-size: 0.78rem;
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.06em;
   }
   .column-header .col-count {
     font-family: var(--mono);
-    font-size: 0.75rem;
+    font-size: 0.78rem;
     background: var(--border);
-    padding: 0.1rem 0.45rem;
+    padding: 0.1rem 0.5rem;
     border-radius: 999px;
   }
 
-  /* ── Document cards ── */
+  /* ── Document cards ──
+     Bumped up padding/margins/font-sizes across the board so cards
+     read comfortably now that there's more room per column. */
   .doc-card {
     background: var(--bg);
     border: 1px solid var(--border);
     border-radius: var(--radius-sm);
-    padding: 0.6rem 0.7rem;
-    margin-bottom: 0.5rem;
+    padding: 0.9rem 1rem;
+    margin-bottom: 0.65rem;
     cursor: pointer;
     transition: all 0.15s;
   }
@@ -220,12 +313,48 @@
   }
   .doc-card:last-child { margin-bottom: 0; }
   .doc-title {
-    font-size: 0.8rem;
-    font-weight: 500;
-    white-space: nowrap;
+    font-size: 0.9rem;
+    font-weight: 600;
+    line-height: 1.3;
+    margin-bottom: 0.35rem;
+    /* Titles can now wrap across 2 lines instead of being clipped to
+       one ellipsized line — there's room for it now. */
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
     overflow: hidden;
-    text-overflow: ellipsis;
-    margin-bottom: 0.25rem;
+  }
+  /* Row showing the Paperless document ID + correspondent (if any) */
+  .doc-id-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    margin-bottom: 0.4rem;
+  }
+  .doc-id {
+    font-family: var(--mono);
+    font-size: 0.7rem;
+    color: var(--text-muted);
+    background: var(--bg-card);
+    padding: 0.1rem 0.4rem;
+    border-radius: 3px;
+  }
+  .doc-correspondent {
+    font-size: 0.75rem;
+    color: var(--text-dim);
+  }
+  /* Snippet of matching OCR content, only shown while searching */
+  .doc-snippet {
+    font-size: 0.72rem;
+    color: var(--text-dim);
+    background: var(--bg-card);
+    border-left: 2px solid var(--accent-warn);
+    padding: 0.4rem 0.55rem;
+    border-radius: 3px;
+    margin: 0.4rem 0;
+    line-height: 1.4;
+    font-style: italic;
   }
   .doc-meta {
     display: flex;
@@ -234,9 +363,9 @@
     flex-wrap: wrap;
   }
   .doc-tag {
-    font-size: 0.65rem;
+    font-size: 0.68rem;
     font-family: var(--mono);
-    padding: 0.1rem 0.4rem;
+    padding: 0.15rem 0.45rem;
     border-radius: 3px;
     white-space: nowrap;
   }
@@ -244,19 +373,36 @@
   .tag-pid { background: rgba(255,146,43,0.15); color: var(--accent-pid); }
   .tag-noncns { background: rgba(218,119,242,0.15); color: var(--accent-noncns); }
   .tag-cnsrpt { background: rgba(32,201,151,0.15); color: var(--accent-cnsrpt); }
-  .doc-date { font-size: 0.65rem; color: var(--text-muted); font-family: var(--mono); }
+  .tag-dkvrpt { background: rgba(247,131,172,0.15); color: var(--accent-dkvrpt); }
+  .doc-date { font-size: 0.68rem; color: var(--text-muted); font-family: var(--mono); }
+  /* NEW: shown on a Complete-column card when it has no Completed
+     Date value — flags that something needs manual attention
+     (e.g. it was completed before the custom field existed, or the
+     field write failed for some reason). */
+  .doc-warning-badge {
+    display: inline-block;
+    font-size: 0.68rem;
+    font-weight: 600;
+    font-family: var(--mono);
+    color: var(--accent-warn);
+    background: var(--accent-warn-dim);
+    border: 1px solid rgba(252,196,25,0.35);
+    padding: 0.15rem 0.45rem;
+    border-radius: 3px;
+    margin-top: 0.4rem;
+  }
 
   /* ── Action buttons on doc cards ── */
   .doc-actions {
     display: flex;
     gap: 0.35rem;
-    margin-top: 0.4rem;
+    margin-top: 0.55rem;
   }
   .doc-actions button {
     font-family: var(--font);
-    font-size: 0.65rem;
+    font-size: 0.7rem;
     font-weight: 600;
-    padding: 0.2rem 0.5rem;
+    padding: 0.3rem 0.6rem;
     border-radius: 3px;
     border: 1px solid var(--border-light);
     background: transparent;
@@ -345,6 +491,69 @@
     color: var(--text);
   }
 
+  /* ── Audit panel (NEW) ──
+     One row per category (CNS Reports / Non-CNS / DKV Reports /
+     completed Classic-PID bills). Each row is either a green
+     "all linked" line, or an amber count + a wrapping list of
+     clickable chips, one per document missing a link. */
+  .audit-panel {
+    margin-top: 2rem;
+    padding: 1.25rem 1.4rem;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+  }
+  .audit-panel h2 {
+    font-size: 1.05rem;
+    font-weight: 600;
+    margin-bottom: 1rem;
+    letter-spacing: -0.02em;
+  }
+  .audit-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0.55rem 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .audit-row:last-child { border-bottom: none; }
+  .audit-label {
+    font-size: 0.85rem;
+    font-weight: 600;
+    min-width: 220px;
+  }
+  .audit-ok {
+    font-size: 0.8rem;
+    color: var(--accent-done);
+    font-family: var(--mono);
+  }
+  .audit-count {
+    font-size: 0.8rem;
+    color: var(--accent-warn);
+    font-family: var(--mono);
+    font-weight: 600;
+  }
+  .audit-doc-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    width: 100%;
+    margin-top: 0.3rem;
+  }
+  .audit-doc-chip {
+    font-size: 0.72rem;
+    font-family: var(--mono);
+    color: var(--text-dim);
+    background: var(--accent-warn-dim);
+    border: 1px solid rgba(252,196,25,0.3);
+    padding: 0.2rem 0.5rem;
+    border-radius: 4px;
+    text-decoration: none;
+    white-space: nowrap;
+  }
+  .audit-doc-chip:hover { color: var(--text); border-color: var(--accent-warn); }
+
   /* ── Toast notification ── */
   .toast {
     position: fixed;
@@ -363,10 +572,12 @@
   .toast.error { border-left: 3px solid #ff6b6b; }
   @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
 
-  /* ── Responsive ── */
-  @media (max-width: 600px) {
-    .connect-bar { flex-direction: column; align-items: stretch; }
-    .field-url input, .field-token input { width: 100%; }
+  /* ── Responsive ──
+     Below 900px the 5-column grid gets too cramped, so we collapse
+     down to a single column (same breakpoint the old file used). */
+  @media (max-width: 900px) {
+    .connect-bar, .search-bar { flex-direction: column; align-items: stretch; }
+    .field-url input, .field-token input, .field-search input { width: 100%; }
     .columns { grid-template-columns: 1fr; }
     .summary { grid-template-columns: repeat(2, 1fr); }
   }
@@ -377,6 +588,31 @@
 
 <script>
 // ═══════════════════════════════════════════════════════════════
+// NEW: config for the "Completed Date" custom field feature.
+// You must create this custom field yourself in Paperless-NGX:
+//   Settings -> Custom Fields -> Add -> name it exactly as below,
+//   type "Date".
+// Once it exists, the dashboard writes today's date into it every
+// time a bill is advanced to status:complete, and only shows bills
+// in the Complete column if their Completed Date is within the
+// retention window below. Older completed bills quietly drop off
+// the board (they're untouched in Paperless, just not displayed
+// here) instead of piling up forever.
+// ═══════════════════════════════════════════════════════════════
+const COMPLETED_DATE_FIELD_NAME = 'Completed Date';
+const COMPLETE_RETENTION_DAYS = 15;
+
+// ═══════════════════════════════════════════════════════════════
+// NEW: config for the "Related Document" custom field.
+// You already use this in Paperless-NGX (type "Document Link") to
+// link a CNS/DKV report back to the bill(s) it covers. The Audit
+// panel further down cross-checks this field and flags documents
+// that should have a link but currently don't — it never blocks
+// the advance button, it's purely informational.
+// ═══════════════════════════════════════════════════════════════
+const RELATED_DOCUMENT_FIELD_NAME = 'Related Document';
+
+// ═══════════════════════════════════════════════════════════════
 // CONFIG: Tag names used in Paperless-NGX
 // Change these if you name your tags differently.
 // ═══════════════════════════════════════════════════════════════
@@ -386,11 +622,17 @@ const TAGS = {
   TYPE_PID:     'type:pid',
   TYPE_NONCNS:  'type:non-cns',
   TYPE_CNSRPT:  'type:cns-report',
+  TYPE_DKVRPT:  'type:dkv-report', // NEW: DKV's own reimbursement statement
 
   // Workflow status tags
+  // NOTE: status:cns-reimbursed used to exist here, but it's gone —
+  // see the WORKFLOWS comment below for why. If you still have any
+  // documents tagged status:cns-reimbursed in Paperless, retag them
+  // to status:complete BEFORE deploying this version, or they'll
+  // silently stop appearing on the dashboard (loadDocuments only
+  // fetches documents matching a status tag defined here).
   CNS_TO_SEND:     'status:cns-to-send',
   CNS_PENDING:     'status:cns-pending',
-  CNS_REIMBURSED:  'status:cns-reimbursed',
   DKV_TO_SEND:     'status:dkv-to-send',
   DKV_PENDING:     'status:dkv-pending',
   DKV_REIMBURSED:  'status:dkv-reimbursed',
@@ -400,16 +642,24 @@ const TAGS = {
 // ═══════════════════════════════════════════════════════════════
 // Workflow transitions: which status comes next for each type
 // ═══════════════════════════════════════════════════════════════
+// NOTE on classic/pid: the CNS report is always a SEPARATE document
+// from the original bill (type:cns-report), and one report can cover
+// several bills at once. So the original classic/pid bill never
+// actually gets sent to DKV itself — only the report does. Earlier
+// versions of this file had classic/pid continue through their own
+// dkv-to-send/pending/reimbursed steps, which duplicated the DKV leg
+// that type:cns-report already owns below. That's fixed here: the
+// original bill's job ends once CNS's part is done (report arrived,
+// which is also when you create/link the type:cns-report document).
 const WORKFLOWS = {
   [TAGS.TYPE_CLASSIC]: [
-    TAGS.CNS_TO_SEND, TAGS.CNS_PENDING, TAGS.CNS_REIMBURSED,
-    TAGS.DKV_TO_SEND, TAGS.DKV_PENDING, TAGS.DKV_REIMBURSED,
-    TAGS.COMPLETE,
+    TAGS.CNS_TO_SEND, TAGS.CNS_PENDING, TAGS.COMPLETE,
   ],
+  // PID never gets sent to CNS at all (CNS pays the doctor directly),
+  // and CNS never sends YOU money for it either — so there's no
+  // separate "money received" step, just "waiting" then "done".
   [TAGS.TYPE_PID]: [
-    TAGS.CNS_PENDING, TAGS.CNS_REIMBURSED,
-    TAGS.DKV_TO_SEND, TAGS.DKV_PENDING, TAGS.DKV_REIMBURSED,
-    TAGS.COMPLETE,
+    TAGS.CNS_PENDING, TAGS.COMPLETE,
   ],
   [TAGS.TYPE_NONCNS]: [
     TAGS.DKV_TO_SEND, TAGS.DKV_PENDING, TAGS.DKV_REIMBURSED,
@@ -419,6 +669,12 @@ const WORKFLOWS = {
     TAGS.DKV_TO_SEND, TAGS.DKV_PENDING, TAGS.DKV_REIMBURSED,
     TAGS.COMPLETE,
   ],
+  // NEW: a DKV Report is DKV's own final reimbursement statement —
+  // there's nothing left to send anywhere, so tag new ones with
+  // status:dkv-reimbursed to start, and one click moves it to Complete.
+  [TAGS.TYPE_DKVRPT]: [
+    TAGS.DKV_REIMBURSED, TAGS.COMPLETE,
+  ],
 };
 
 // ═══════════════════════════════════════════════════════════════
@@ -427,12 +683,26 @@ const WORKFLOWS = {
 const COLUMNS = [
   { key: TAGS.CNS_TO_SEND,    label: 'CNS — To Send' },
   { key: TAGS.CNS_PENDING,    label: 'CNS — Pending' },
-  { key: TAGS.CNS_REIMBURSED, label: 'CNS — Reimbursed' },
   { key: TAGS.DKV_TO_SEND,    label: 'DKV — To Send' },
   { key: TAGS.DKV_PENDING,    label: 'DKV — Pending' },
   { key: TAGS.DKV_REIMBURSED, label: 'DKV — Reimbursed' },
-  { key: TAGS.COMPLETE,       label: 'Complete ✓' },
+  { key: TAGS.COMPLETE,       label: `Complete ✓ (last ${COMPLETE_RETENTION_DAYS}d)` },
 ];
+
+// ═══════════════════════════════════════════════════════════════
+// NEW: "Instant filter" definitions for the clickable summary cards.
+// Each key matches a data-filter-key on a summary card (see render()
+// below). The value is the list of column status-keys that card
+// should narrow the pipeline down to when clicked. 'total' is
+// special-cased in window._filterBy — it always clears the filter.
+// ═══════════════════════════════════════════════════════════════
+const SUMMARY_FILTERS = {
+  total:  null, // "Total Bills" card -> show everything
+  action: [TAGS.CNS_TO_SEND, TAGS.DKV_TO_SEND],
+  cns:    [TAGS.CNS_TO_SEND, TAGS.CNS_PENDING],
+  dkv:    [TAGS.DKV_TO_SEND, TAGS.DKV_PENDING],
+  complete: [TAGS.COMPLETE],
+};
 
 // ═══════════════════════════════════════════════════════════════
 // APP STATE
@@ -446,10 +716,21 @@ let state = {
   error: '',
 
   // Data from Paperless-NGX
-  tags: {},        // tag_id -> tag_name
-  tagsByName: {},  // tag_name -> tag_id
-  documents: [],   // array of document objects
+  tags: {},            // tag_id -> tag_name
+  tagsByName: {},       // tag_name -> tag_id
+  correspondents: {},   // correspondent_id -> correspondent_name (NEW)
+  customFieldsByName: {}, // NEW: custom field name -> field id (e.g. "Completed Date" -> 7)
+  documents: [],         // array of document objects
   loading: false,
+
+  // Search box text (NEW). Filters the pipeline columns live as you type.
+  search: '',
+
+  // NEW: which summary card's "instant filter" is active, if any.
+  // null = no filter (show all 6 columns). Otherwise it's set to one
+  // of the arrays in SUMMARY_FILTERS below (e.g. just the two CNS
+  // statuses), and the pipeline only renders matching columns.
+  statusFilter: null,
 
   // Toast
   toast: null,
@@ -519,6 +800,36 @@ async function loadTags() {
 }
 
 /**
+ * NEW: Load all correspondents from Paperless-NGX and build an
+ * id -> name lookup map (mirrors loadTags above). Correspondents are
+ * whoever/whatever sent the document (e.g. "Dr. Martin", "CNS").
+ * This only helps if you're actually assigning a correspondent to
+ * documents in Paperless — if you never set one, this map stays
+ * empty and the dashboard just won't show a correspondent line.
+ */
+async function loadCorrespondents() {
+  const items = await apiAll('/api/correspondents/?page_size=100');
+  state.correspondents = {};
+  items.forEach(c => {
+    state.correspondents[c.id] = c.name;
+  });
+}
+
+/**
+ * NEW: Load all custom field DEFINITIONS from Paperless-NGX (not their
+ * values per document — those come back attached to each document
+ * itself, see loadDocuments below). We only need this to find the ID
+ * of the "Completed Date" field so we can read/write its value.
+ */
+async function loadCustomFields() {
+  const fields = await apiAll('/api/custom_fields/?page_size=100');
+  state.customFieldsByName = {};
+  fields.forEach(f => {
+    state.customFieldsByName[f.name] = f.id;
+  });
+}
+
+/**
  * Load all documents that have at least one of our workflow tags.
  * We filter by looking for any status: tag.
  */
@@ -545,16 +856,56 @@ async function loadDocuments() {
   const tagFilter = statusTagIds.join(',');
   const docs = await apiAll(`/api/documents/?page_size=100&tags__id__in=${tagFilter}`);
 
-  // Enrich each document with resolved tag names
-  state.documents = docs.map(d => ({
-    id: d.id,
-    title: d.title || `Document #${d.id}`,
-    created: d.created,
-    added: d.added,
-    tagIds: d.tags || [],
-    // Resolve tag IDs to names for easy lookup
-    tagNames: (d.tags || []).map(id => state.tags[id]).filter(Boolean),
-  }));
+  // Enrich each document with resolved tag names.
+  // NOTE: Paperless's document list endpoint already returns the
+  // full OCR'd "content" field per document by default — we don't
+  // need a second request per document to get it. That's what
+  // powers the full-text search below. For a handful of documents
+  // this is fine; if your library grows into the thousands this
+  // payload will get heavier and you may want to paginate search.
+  state.documents = docs.map(d => {
+    // NEW: Paperless returns custom_fields as an array of
+    // { field: <field id>, value: <value> } entries. We keep the raw
+    // array around (customFieldsRaw) so that when we later PATCH this
+    // document to set Completed Date, we can merge into it without
+    // wiping out any OTHER custom fields you might have set (e.g. via
+    // paperless-ai-assist) that this dashboard doesn't otherwise touch.
+    const customFieldsRaw = d.custom_fields || [];
+    const completedDateFieldId = state.customFieldsByName[COMPLETED_DATE_FIELD_NAME];
+    const completedDateEntry = customFieldsRaw.find(cf => cf.field === completedDateFieldId);
+
+    // NEW: resolve the "Related Document" Document Link field. Paperless
+    // stores a Document Link field's value as an array of linked document
+    // IDs (e.g. [123, 456]) — normalize defensively in case a given
+    // install/version ever returns a bare ID instead of an array.
+    const relatedDocFieldId = state.customFieldsByName[RELATED_DOCUMENT_FIELD_NAME];
+    const relatedDocEntry = customFieldsRaw.find(cf => cf.field === relatedDocFieldId);
+    let relatedDocumentIds = [];
+    if (relatedDocEntry && relatedDocEntry.value) {
+      relatedDocumentIds = Array.isArray(relatedDocEntry.value)
+        ? relatedDocEntry.value
+        : [relatedDocEntry.value];
+    }
+
+    return {
+      id: d.id,
+      title: d.title || `Document #${d.id}`,
+      created: d.created,
+      added: d.added,
+      tagIds: d.tags || [],
+      // Resolve tag IDs to names for easy lookup
+      tagNames: (d.tags || []).map(id => state.tags[id]).filter(Boolean),
+      // NEW: resolve the correspondent ID to its name, if one is set
+      correspondent: d.correspondent ? (state.correspondents[d.correspondent] || null) : null,
+      // NEW: full OCR text, used for full-text search + match snippets
+      content: d.content || '',
+      // NEW: raw custom fields (kept for merging on PATCH) + the
+      // resolved Completed Date value (or null if not set yet)
+      customFieldsRaw,
+      completedDate: (completedDateEntry && completedDateEntry.value) ? completedDateEntry.value : null,
+      relatedDocumentIds,
+    };
+  });
 }
 
 /**
@@ -562,7 +913,7 @@ async function loadDocuments() {
  * Returns the tag name or null.
  */
 function getDocType(doc) {
-  const types = [TAGS.TYPE_CLASSIC, TAGS.TYPE_PID, TAGS.TYPE_NONCNS, TAGS.TYPE_CNSRPT];
+  const types = [TAGS.TYPE_CLASSIC, TAGS.TYPE_PID, TAGS.TYPE_NONCNS, TAGS.TYPE_CNSRPT, TAGS.TYPE_DKVRPT];
   return doc.tagNames.find(t => types.includes(t)) || null;
 }
 
@@ -593,9 +944,87 @@ function getNextStatus(doc) {
   return flow[idx + 1];
 }
 
+/** NEW: does this document have at least one Related Document link set? */
+function hasRelatedDocument(doc) {
+  return Array.isArray(doc.relatedDocumentIds) && doc.relatedDocumentIds.length > 0;
+}
+
+/**
+ * NEW: Reconciliation / audit check (informational only — never blocks
+ * the advance button). Cross-references the "Related Document" field to
+ * find documents that should probably be linked to something but aren't:
+ *   - CNS Reports (type:cns-report) with no link back to the bill(s) they cover
+ *   - Non-CNS bills (type:non-cns) with no link (e.g. to a DKV statement)
+ *   - DKV Reports (type:dkv-report) with no link back to what they settle
+ *   - Classic/PID bills already marked Complete with no link forward to
+ *     the CNS report that's supposed to carry their DKV leg from here
+ * Returns an object of arrays; an empty array means "all good" for that
+ * category.
+ */
+function getAuditIssues() {
+  const docs = state.documents;
+  return {
+    cnsReports: docs.filter(d => getDocType(d) === TAGS.TYPE_CNSRPT && !hasRelatedDocument(d)),
+    nonCns: docs.filter(d => getDocType(d) === TAGS.TYPE_NONCNS && !hasRelatedDocument(d)),
+    dkvReports: docs.filter(d => getDocType(d) === TAGS.TYPE_DKVRPT && !hasRelatedDocument(d)),
+    completedBills: docs.filter(d => {
+      const type = getDocType(d);
+      const isBillType = type === TAGS.TYPE_CLASSIC || type === TAGS.TYPE_PID;
+      return isBillType && getDocStatus(d) === TAGS.COMPLETE && !hasRelatedDocument(d);
+    }),
+  };
+}
+
+/**
+ * NEW: render one row of the Audit panel below — either a green
+ * "all linked" line, or the count + a clickable chip per document
+ * that's missing a link (opens straight to that doc in Paperless).
+ */
+function renderAuditSection(label, missingDocs, baseUrl) {
+  if (missingDocs.length === 0) {
+    return `
+      <div class="audit-row">
+        <span class="audit-label">${escHtml(label)}</span>
+        <span class="audit-ok">✓ all linked</span>
+      </div>
+    `;
+  }
+  return `
+    <div class="audit-row audit-row-issue">
+      <span class="audit-label">${escHtml(label)}</span>
+      <span class="audit-count">${missingDocs.length} missing a link</span>
+      <div class="audit-doc-list">
+        ${missingDocs.map(d => {
+          const docUrl = baseUrl.replace(/\/+$/, '') + '/documents/' + d.id + '/details';
+          return `<a class="audit-doc-chip" href="${escHtml(docUrl)}" target="_blank" onclick="event.stopPropagation()">#${d.id} ${escHtml(d.title)}</a>`;
+        }).join('')}
+      </div>
+    </div>
+  `;
+}
+
+/**
+ * NEW: Should this document still show up in the Complete column?
+ * Only relevant for documents whose status is status:complete.
+ * - No Completed Date set yet -> hidden (per your call: you're
+ *   backfilling old completed docs manually, so we don't want them
+ *   permanently cluttering the column with no way to age out).
+ * - Otherwise -> visible only if within COMPLETE_RETENTION_DAYS.
+ */
+function isWithinCompleteRetention(doc) {
+  if (!doc.completedDate) return false;
+  const completedMs = Date.parse(doc.completedDate);
+  if (Number.isNaN(completedMs)) return false;
+  const daysSince = (Date.now() - completedMs) / 86400000; // ms in a day
+  return daysSince <= COMPLETE_RETENTION_DAYS;
+}
+
 /**
  * Advance a document to its next workflow status.
  * Removes the old status tag and adds the new one via the Paperless API.
+ * NEW: if the next status is status:complete, also stamp today's date
+ * into the "Completed Date" custom field in the same request, so the
+ * Complete column can later age this document out automatically.
  */
 async function advanceDocument(doc) {
   const currentStatus = getDocStatus(doc);
@@ -614,13 +1043,119 @@ async function advanceDocument(doc) {
     .filter(id => id !== currentTagId)  // remove current status
     .concat([nextTagId]);               // add next status
 
-  // PATCH the document with the updated tags
+  // Base PATCH payload — always updates tags
+  const patchBody = { tags: newTagIds };
+
+  // NEW: if we're moving this bill to "complete", also set Completed Date
+  if (nextStatus === TAGS.COMPLETE) {
+    const fieldId = state.customFieldsByName[COMPLETED_DATE_FIELD_NAME];
+    if (!fieldId) {
+      // Field doesn't exist in Paperless yet — warn, but don't block
+      // the status change itself.
+      showToast(`Custom field "${COMPLETED_DATE_FIELD_NAME}" not found in Paperless — create it to enable auto-hiding old completed bills.`, 'error');
+    } else {
+      const todayIso = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+      // Merge into the existing custom_fields array instead of
+      // overwriting it, so any other custom fields on this document
+      // (e.g. set by paperless-ai-assist) are preserved.
+      const mergedCustomFields = doc.customFieldsRaw
+        .filter(cf => cf.field !== fieldId)
+        .concat([{ field: fieldId, value: todayIso }]);
+      patchBody.custom_fields = mergedCustomFields;
+    }
+  }
+
+  // PATCH the document with the updated tags (and custom field, if applicable)
   await api(`/api/documents/${doc.id}/`, {
     method: 'PATCH',
-    body: JSON.stringify({ tags: newTagIds }),
+    body: JSON.stringify(patchBody),
   });
 
   showToast(`${doc.title} → ${nextStatus.replace('status:', '')}`, 'success');
+}
+
+// ═══════════════════════════════════════════════════════════════
+// SEARCH HELPERS (NEW)
+// ═══════════════════════════════════════════════════════════════
+
+/**
+ * Escape a string so it's safe to drop into a RegExp (i.e. characters
+ * like "." or "(" don't get treated as regex syntax). Needed because
+ * the user's search text is arbitrary and we build a RegExp from it
+ * below to highlight matches.
+ */
+function escRegex(str) {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * Check whether a single document matches the current search text,
+ * and if the match came from inside the document content, build a
+ * short "snippet" of surrounding text so the user can see why it
+ * matched without opening the document.
+ *
+ * Search order: document ID → title → correspondent → full content.
+ * Returns: { match: bool, field: 'id'|'title'|'correspondent'|'content'|null, snippet: string|null }
+ */
+function getSearchMatch(doc, rawSearch) {
+  const search = (rawSearch || '').trim();
+
+  // No search text -> everything matches, nothing to highlight
+  if (!search) return { match: true, field: null, snippet: null };
+
+  const q = search.toLowerCase();
+
+  // Match on the Paperless document ID (e.g. searching "482")
+  if (String(doc.id).includes(q)) {
+    return { match: true, field: 'id', snippet: null };
+  }
+
+  // Match on the title
+  if (doc.title && doc.title.toLowerCase().includes(q)) {
+    return { match: true, field: 'title', snippet: null };
+  }
+
+  // Match on the correspondent name, if one is set
+  if (doc.correspondent && doc.correspondent.toLowerCase().includes(q)) {
+    return { match: true, field: 'correspondent', snippet: null };
+  }
+
+  // Match inside the full OCR'd content (e.g. a reference number
+  // buried in the middle of the bill, not just the first N characters)
+  if (doc.content) {
+    const lower = doc.content.toLowerCase();
+    const idx = lower.indexOf(q);
+    if (idx !== -1) {
+      const CONTEXT_CHARS = 45; // how much text to show before/after the match
+      const start = Math.max(0, idx - CONTEXT_CHARS);
+      const end = Math.min(doc.content.length, idx + q.length + CONTEXT_CHARS);
+
+      // Collapse newlines/extra whitespace so the snippet reads as one line
+      let snippet = doc.content.slice(start, end).replace(/\s+/g, ' ').trim();
+      if (start > 0) snippet = '…' + snippet;
+      if (end < doc.content.length) snippet = snippet + '…';
+
+      return { match: true, field: 'content', snippet };
+    }
+  }
+
+  // No match anywhere -> this document gets filtered out of the column
+  return { match: false, field: null, snippet: null };
+}
+
+/**
+ * HTML-escape text, then wrap any occurrence of `rawQuery` in <mark>
+ * tags so it's visually highlighted. Escaping happens BEFORE
+ * highlighting so we never accidentally inject raw HTML from a
+ * document's OCR content (which we don't control) into the page.
+ */
+function highlightMatch(text, rawQuery) {
+  const escaped = escHtml(text || '');
+  if (!rawQuery) return escaped;
+
+  const escQuery = escHtml(rawQuery);
+  const re = new RegExp(escRegex(escQuery), 'ig');
+  return escaped.replace(re, (m) => `<mark>${m}</mark>`);
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -647,6 +1182,7 @@ function typeClass(tagName) {
   if (tagName === TAGS.TYPE_PID) return 'tag-pid';
   if (tagName === TAGS.TYPE_NONCNS) return 'tag-noncns';
   if (tagName === TAGS.TYPE_CNSRPT) return 'tag-cnsrpt';
+  if (tagName === TAGS.TYPE_DKVRPT) return 'tag-dkvrpt';
   return '';
 }
 
@@ -656,6 +1192,7 @@ function typeLabel(tagName) {
   if (tagName === TAGS.TYPE_PID) return 'PID';
   if (tagName === TAGS.TYPE_NONCNS) return 'Non-CNS';
   if (tagName === TAGS.TYPE_CNSRPT) return 'CNS Report';
+  if (tagName === TAGS.TYPE_DKVRPT) return 'DKV Report';
   return '';
 }
 
@@ -673,8 +1210,9 @@ async function connect() {
     localStorage.setItem('pngx_url', state.url);
     localStorage.setItem('pngx_token', state.token);
 
-    // Test the connection by loading tags
-    await loadTags();
+    // Test the connection by loading tags, correspondents, and custom
+    // field definitions (NEW) in parallel
+    await Promise.all([loadTags(), loadCorrespondents(), loadCustomFields()]);
     state.connected = true;
 
     // Now load documents
@@ -696,7 +1234,7 @@ async function refresh() {
   state.loading = true;
   render();
   try {
-    await loadTags();
+    await Promise.all([loadTags(), loadCorrespondents(), loadCustomFields()]);
     await loadDocuments();
   } catch (e) {
     showToast('Refresh failed: ' + e.message, 'error');
@@ -721,9 +1259,19 @@ async function handleAdvance(doc) {
 function render() {
   const app = document.getElementById('app');
 
-  // ── Build summary stats ──
+  // Remember whether the search box currently has focus (and where
+  // the cursor is) BEFORE we blow away and rebuild the whole DOM.
+  // Since every keystroke in the search box triggers a full re-render
+  // (to live-filter the columns), without this the input would lose
+  // focus after every single character typed.
+  const activeEl = document.activeElement;
+  const wasSearchFocused = activeEl && activeEl.id === 'inp-search';
+  const searchCursorPos = wasSearchFocused ? activeEl.selectionStart : null;
+
+  // ── Build summary stats (based on ALL documents, not the filtered
+  //    search results — the search only filters the pipeline board
+  //    below, the summary always reflects your whole tracked set) ──
   const docs = state.documents;
-  // Count docs per group
   const inCNS = docs.filter(d => {
     const s = getDocStatus(d);
     return s === TAGS.CNS_TO_SEND || s === TAGS.CNS_PENDING;
@@ -739,11 +1287,45 @@ function render() {
     return s === TAGS.CNS_TO_SEND || s === TAGS.DKV_TO_SEND;
   }).length;
 
-  // ── Build column data ──
-  const columnData = COLUMNS.map(col => ({
-    ...col,
-    docs: docs.filter(d => getDocStatus(d) === col.key),
-  }));
+  // ── Build column data, applying BOTH the summary-card status filter
+  //    AND the search filter ──
+  // 1) If a summary card filter is active, drop whole columns that
+  //    aren't in that filter's status list.
+  // 2) Within the remaining columns, each doc gets a `_searchInfo`
+  //    attached (see getSearchMatch above), and docs that don't match
+  //    the current search text are dropped individually.
+  const visibleColumnDefs = state.statusFilter
+    ? COLUMNS.filter(col => state.statusFilter.includes(col.key))
+    : COLUMNS;
+
+  const columnData = visibleColumnDefs.map(col => {
+    const colDocs = docs
+      .filter(d => getDocStatus(d) === col.key)
+      // The Complete column hides bills older than the retention window,
+      // but bills with NO Completed Date at all are shown (flagged) —
+      // that's a signal something's wrong (e.g. advanced without the
+      // custom field being set), not something to quietly hide.
+      .filter(d => col.key !== TAGS.COMPLETE || !d.completedDate || isWithinCompleteRetention(d))
+      .map(d => ({ ...d, _searchInfo: getSearchMatch(d, state.search) }))
+      .filter(d => d._searchInfo.match);
+    return { ...col, docs: colDocs };
+  });
+
+  const totalShown = columnData.reduce((sum, c) => sum + c.docs.length, 0);
+
+  // NEW: audit issues, computed against ALL documents (not affected by
+  // the search box or the summary-card filter — this always reflects
+  // your whole tracked set, same as the summary cards above).
+  const audit = getAuditIssues();
+
+  // NEW: when a filter has narrowed the columns down (and we're not on
+  // the mobile single-column layout), stretch the remaining columns to
+  // fill the row instead of leaving empty grid tracks on the right.
+  // window.innerWidth check mirrors the 900px mobile breakpoint in CSS.
+  const useNarrowedGrid = state.statusFilter && window.innerWidth > 900;
+  const columnsGridStyle = useNarrowedGrid
+    ? ` style="grid-template-columns: repeat(${columnData.length}, 1fr);"`
+    : '';
 
   // ── Render HTML ──
   app.innerHTML = `
@@ -770,6 +1352,21 @@ function render() {
       ${state.connected && !state.error ? `<span class="connect-status ok">✓ Connected · ${total} docs</span>` : ''}
     </div>
 
+    ${state.connected && !state.loading ? `
+      <!-- Search bar (NEW): filters the pipeline columns below live,
+           searching document ID, title, correspondent, and full OCR content -->
+      <div class="search-bar">
+        <div class="field field-search">
+          <label>Search documents</label>
+          <input type="text" id="inp-search"
+                 placeholder="Search by title, #ID, correspondent, or text inside the bill…"
+                 value="${escHtml(state.search)}" />
+        </div>
+        ${state.search ? `<button class="btn btn-clear" id="btn-clear-search">✕ Clear</button>` : ''}
+        ${state.search ? `<span class="search-status">${totalShown} of ${total} shown</span>` : ''}
+      </div>
+    ` : ''}
+
     ${!state.connected ? `
       <!-- Placeholder when not connected -->
       <div class="placeholder">
@@ -781,27 +1378,36 @@ function render() {
       <div class="loading"><div class="spinner"></div> Loading documents…</div>
     ` : `
       <!-- Summary cards -->
+      <!-- NEW: each card is clickable — click narrows the pipeline below
+           to just the matching column(s) ("instant filter"). Click the
+           same card again (or "Total Bills") to clear the filter. -->
       <div class="summary">
-        <div class="summary-card card-total">
+        <div class="summary-card card-total ${isFilterActive('total') ? 'active' : ''}"
+             onclick="window._filterBy('total')" title="Show all columns">
           <div class="label">Total Bills</div>
           <div class="value">${total}</div>
         </div>
-        <div class="summary-card" style="border-left: 3px solid var(--accent-warn);">
+        <div class="summary-card ${isFilterActive('action') ? 'active' : ''}"
+             style="border-left: 3px solid var(--accent-warn);"
+             onclick="window._filterBy('action')" title="Filter: bills that need sending">
           <div class="label">Action Needed</div>
           <div class="value" style="color: var(--accent-warn);">${actionNeeded}</div>
           <div class="sub">bills to send</div>
         </div>
-        <div class="summary-card card-cns">
+        <div class="summary-card card-cns ${isFilterActive('cns') ? 'active' : ''}"
+             onclick="window._filterBy('cns')" title="Filter: with CNS">
           <div class="label">With CNS</div>
           <div class="value">${inCNS}</div>
           <div class="sub">in progress</div>
         </div>
-        <div class="summary-card card-dkv">
+        <div class="summary-card card-dkv ${isFilterActive('dkv') ? 'active' : ''}"
+             onclick="window._filterBy('dkv')" title="Filter: with DKV">
           <div class="label">With DKV</div>
           <div class="value">${inDKV}</div>
           <div class="sub">in progress</div>
         </div>
-        <div class="summary-card card-done">
+        <div class="summary-card card-done ${isFilterActive('complete') ? 'active' : ''}"
+             onclick="window._filterBy('complete')" title="Filter: complete">
           <div class="label">Complete</div>
           <div class="value">${complete}</div>
         </div>
@@ -809,27 +1415,57 @@ function render() {
 
       <!-- Pipeline columns -->
       <div class="pipeline">
-        <h2>Pipeline</h2>
-        <div class="columns">
+        <div class="pipeline-header">
+          <h2>Pipeline</h2>
+          ${state.statusFilter ? `
+            <div class="filter-status">
+              Filtered — showing ${columnData.length} of ${COLUMNS.length} columns
+              <button id="btn-clear-filter">✕ Clear filter</button>
+            </div>
+          ` : ''}
+        </div>
+        <div class="columns"${columnsGridStyle}>
           ${columnData.map(col => `
             <div class="column">
               <div class="column-header">
                 <span class="col-title">${escHtml(col.label)}</span>
                 <span class="col-count">${col.docs.length}</span>
               </div>
-              ${col.docs.length === 0 ? '<div class="empty">No bills here</div>' :
+              ${col.docs.length === 0 ? `<div class="empty">${state.search ? 'No matches here' : 'No bills here'}</div>` :
                 col.docs.map(d => {
                   const dtype = getDocType(d);
                   const next = getNextStatus(d);
+                  const info = d._searchInfo;
                   // Build the URL to open the document in Paperless
                   const docUrl = state.url.replace(/\/+$/, '') + '/documents/' + d.id + '/details';
                   return `
                     <div class="doc-card" title="Open in Paperless-NGX" onclick="window.open('${escHtml(docUrl)}', '_blank')">
-                      <div class="doc-title">${escHtml(d.title)}</div>
+                      <!-- Title: highlighted only if the title itself matched the search -->
+                      <div class="doc-title">${highlightMatch(d.title, info.field === 'title' ? state.search : '')}</div>
+
+                      <!-- NEW: document ID + correspondent row -->
+                      <div class="doc-id-row">
+                        <span class="doc-id">#${d.id}</span>
+                        ${d.correspondent ? `
+                          <span class="doc-correspondent">${highlightMatch(d.correspondent, info.field === 'correspondent' ? state.search : '')}</span>
+                        ` : ''}
+                      </div>
+
                       <div class="doc-meta">
                         ${dtype ? `<span class="doc-tag ${typeClass(dtype)}">${typeLabel(dtype)}</span>` : ''}
                         <span class="doc-date">${fmtDate(d.created)}</span>
                       </div>
+
+                      <!-- NEW: snippet of matching OCR text, only shown when the
+                           match came from inside the document content -->
+                      ${info.snippet ? `<div class="doc-snippet">${highlightMatch(info.snippet, state.search)}</div>` : ''}
+
+                      <!-- NEW: flag completed bills that have no Completed Date —
+                           these are shown (not hidden) precisely so this is visible -->
+                      ${(col.key === TAGS.COMPLETE && !d.completedDate) ? `
+                        <div class="doc-warning-badge">⚠ No Completed Date set</div>
+                      ` : ''}
+
                       ${next ? `
                         <div class="doc-actions">
                           <button class="advance" data-doc-id="${d.id}"
@@ -847,6 +1483,18 @@ function render() {
         </div>
       </div>
 
+      <!-- NEW: Audit panel — cross-checks the "Related Document" custom
+           field across CNS Reports, Non-CNS bills, DKV Reports, and
+           completed Classic/PID bills. Informational only; clicking a
+           chip opens that document directly in Paperless-NGX. -->
+      <div class="audit-panel">
+        <h2>Audit — missing "Related Document" links</h2>
+        ${renderAuditSection('CNS Reports', audit.cnsReports, state.url)}
+        ${renderAuditSection('Non-CNS bills', audit.nonCns, state.url)}
+        ${renderAuditSection('DKV Reports', audit.dkvReports, state.url)}
+        ${renderAuditSection('Completed Classic/PID bills', audit.completedBills, state.url)}
+      </div>
+
       <!-- Tag reference (collapsible) -->
       <div class="tag-ref">
         <details>
@@ -858,6 +1506,17 @@ function render() {
                 ${state.tagsByName[v] ? '' : ' <span style="color:#ff6b6b;">⚠ missing</span>'}
               </div>
             `).join('')}
+          </div>
+          <!-- NEW: custom field reference, mirrors the tag warning above -->
+          <div class="tag-ref-grid" style="margin-top: 0.75rem;">
+            <div class="tag-ref-item">
+              <code>${escHtml(COMPLETED_DATE_FIELD_NAME)}</code> (custom field, type Date)
+              ${state.customFieldsByName[COMPLETED_DATE_FIELD_NAME] ? '' : ' <span style="color:#ff6b6b;">⚠ missing — create in Settings → Custom Fields</span>'}
+            </div>
+            <div class="tag-ref-item">
+              <code>${escHtml(RELATED_DOCUMENT_FIELD_NAME)}</code> (custom field, type Document Link)
+              ${state.customFieldsByName[RELATED_DOCUMENT_FIELD_NAME] ? '' : ' <span style="color:#ff6b6b;">⚠ missing — create in Settings → Custom Fields</span>'}
+            </div>
           </div>
         </details>
       </div>
@@ -872,6 +1531,8 @@ function render() {
   const urlInput = document.getElementById('inp-url');
   const tokenInput = document.getElementById('inp-token');
   const connectBtn = document.getElementById('btn-connect');
+  const searchInput = document.getElementById('inp-search');
+  const clearSearchBtn = document.getElementById('btn-clear-search');
 
   if (urlInput) urlInput.addEventListener('input', e => { state.url = e.target.value; });
   if (tokenInput) tokenInput.addEventListener('input', e => { state.token = e.target.value; });
@@ -879,6 +1540,37 @@ function render() {
     if (state.connected) refresh();
     else connect();
   });
+
+  // NEW: live search — every keystroke updates state and re-renders,
+  // which re-filters the pipeline columns above.
+  if (searchInput) {
+    searchInput.addEventListener('input', e => {
+      state.search = e.target.value;
+      render();
+    });
+  }
+  if (clearSearchBtn) {
+    clearSearchBtn.addEventListener('click', () => {
+      state.search = '';
+      render();
+    });
+  }
+  const clearFilterBtn = document.getElementById('btn-clear-filter');
+  if (clearFilterBtn) {
+    clearFilterBtn.addEventListener('click', () => {
+      state.statusFilter = null;
+      render();
+    });
+  }
+
+  // Restore focus + cursor position in the search box after the
+  // re-render triggered by typing (see comment at the top of render()).
+  if (wasSearchFocused && searchInput) {
+    searchInput.focus();
+    if (searchCursorPos !== null) {
+      searchInput.setSelectionRange(searchCursorPos, searchCursorPos);
+    }
+  }
 }
 
 // Expose the advance handler globally so inline onclick can call it
@@ -886,6 +1578,32 @@ window._advance = function(docId) {
   const doc = state.documents.find(d => d.id === docId);
   if (doc) handleAdvance(doc);
 };
+
+/**
+ * NEW: Handle a click on one of the clickable summary cards.
+ * Clicking a card sets the pipeline filter to that card's statuses.
+ * Clicking the SAME card again toggles it back off (shows everything).
+ * Clicking "Total Bills" always clears the filter directly.
+ */
+window._filterBy = function(key) {
+  if (key === 'total') {
+    state.statusFilter = null;
+    render();
+    return;
+  }
+  const def = SUMMARY_FILTERS[key];
+  // Compare arrays by value (JSON) to detect "clicking the active card again"
+  const isSameFilter = JSON.stringify(state.statusFilter) === JSON.stringify(def);
+  state.statusFilter = isSameFilter ? null : def;
+  render();
+};
+
+/** NEW: is this summary card's filter the one currently applied? */
+function isFilterActive(key) {
+  const def = SUMMARY_FILTERS[key];
+  if (key === 'total') return state.statusFilter === null;
+  return JSON.stringify(state.statusFilter) === JSON.stringify(def);
+}
 
 /** Escape HTML to prevent XSS */
 function escHtml(str) {
