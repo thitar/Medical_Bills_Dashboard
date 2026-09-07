@@ -1,10 +1,14 @@
 # docker-compose.yml — Medical Bill Dashboard
-# Serves the dashboard HTML and proxies API calls to Paperless-NGX.
-# No CORS configuration needed on Paperless side.
+#
+# Before running this: on the host, make sure nginx can actually read
+# your dashboard file (it runs as its own internal user, not as you):
+#
+#   chmod o+r ./html/index.html
+#
+# That's it — no group tricks needed. This container serves LAN-only
+# traffic and the file has no secrets in it, so world-readable is fine here.
 #
 # Usage:
-#   mkdir -p html
-#   cp medical-bill-dashboard.html html/index.html
 #   docker compose up -d
 
 services:
@@ -12,10 +16,10 @@ services:
     image: nginx:alpine
     container_name: medical-bill-dashboard
     ports:
-      - "8020:80"
+      - "8020:80"                # host:container — dashboard at http://<server-ip>:8020
     volumes:
-      - ./html:/usr/share/nginx/html:ro      # Dashboard files
-      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro  # Custom nginx config
+      - ./html:/usr/share/nginx/html:ro      # dashboard files (read-only)
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro  # proxy + serving config
     restart: unless-stopped
     networks:
       - beacon-net
@@ -23,7 +27,7 @@ services:
       beacon.enable: "true"
       beacon.host: "mbd.thitar.ovh"
       beacon.port: "8020"
-      beacon.access: "lan"    # lan / private / public
+      beacon.access: "lan"
 
 networks:
   beacon-net:
