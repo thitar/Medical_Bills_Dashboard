@@ -26,7 +26,7 @@ services:
     labels:
       beacon.enable: "true"
       beacon.host: "mbd.thitar.ovh"
-      beacon.port: "8020"
+      beacon.port: "80"          # internal container port — Caddy/beacon dial this over the docker network, NOT the host-mapped 8020
       beacon.access: "lan"
 
 networks:
