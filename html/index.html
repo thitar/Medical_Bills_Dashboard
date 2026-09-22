@@ -493,9 +493,9 @@
 
   /* ── Audit panel (NEW) ──
      One row per category (CNS Reports / Non-CNS / DKV Reports /
-     completed Classic-PID bills). Each row is either a green
-     "all linked" line, or an amber count + a wrapping list of
-     clickable chips, one per document missing a link. */
+     completed Classic-PID bills / complete-but-undated bills). Each
+     row is either a green "all good" line, or an amber count + a
+     wrapping list of clickable chips, one per document with an issue. */
   .audit-panel {
     margin-top: 2rem;
     padding: 1.25rem 1.4rem;
@@ -972,6 +972,11 @@ function getAuditIssues() {
       const isBillType = type === TAGS.TYPE_CLASSIC || type === TAGS.TYPE_PID;
       return isBillType && getDocStatus(d) === TAGS.COMPLETE && !hasRelatedDocument(d);
     }),
+    // NEW: ALL status:complete docs missing a Completed Date, regardless
+    // of type. Unlike the Complete column (which only shows these when
+    // no search/summary-card filter is hiding them), this always lists
+    // every one of them so they don't get lost.
+    noCompletedDate: docs.filter(d => getDocStatus(d) === TAGS.COMPLETE && !d.completedDate),
   };
 }
 
@@ -979,20 +984,24 @@ function getAuditIssues() {
  * NEW: render one row of the Audit panel below — either a green
  * "all linked" line, or the count + a clickable chip per document
  * that's missing a link (opens straight to that doc in Paperless).
+ * `opts.okText`/`opts.issueText` let callers reuse this for checks
+ * that aren't about the "Related Document" link (e.g. missing dates).
  */
-function renderAuditSection(label, missingDocs, baseUrl) {
+function renderAuditSection(label, missingDocs, baseUrl, opts = {}) {
+  const okText = opts.okText || '✓ all linked';
+  const issueText = opts.issueText || 'missing a link';
   if (missingDocs.length === 0) {
     return `
       <div class="audit-row">
         <span class="audit-label">${escHtml(label)}</span>
-        <span class="audit-ok">✓ all linked</span>
+        <span class="audit-ok">${escHtml(okText)}</span>
       </div>
     `;
   }
   return `
     <div class="audit-row audit-row-issue">
       <span class="audit-label">${escHtml(label)}</span>
-      <span class="audit-count">${missingDocs.length} missing a link</span>
+      <span class="audit-count">${missingDocs.length} ${escHtml(issueText)}</span>
       <div class="audit-doc-list">
         ${missingDocs.map(d => {
           const docUrl = baseUrl.replace(/\/+$/, '') + '/documents/' + d.id + '/details';
@@ -1485,14 +1494,18 @@ function render() {
 
       <!-- NEW: Audit panel — cross-checks the "Related Document" custom
            field across CNS Reports, Non-CNS bills, DKV Reports, and
-           completed Classic/PID bills. Informational only; clicking a
-           chip opens that document directly in Paperless-NGX. -->
+           completed Classic/PID bills; also flags status:complete docs
+           with no Completed Date set (these can hide from the Complete
+           column depending on filters, so this list always shows all
+           of them). Informational only; clicking a chip opens that
+           document directly in Paperless-NGX. -->
       <div class="audit-panel">
-        <h2>Audit — missing "Related Document" links</h2>
+        <h2>Audit</h2>
         ${renderAuditSection('CNS Reports', audit.cnsReports, state.url)}
         ${renderAuditSection('Non-CNS bills', audit.nonCns, state.url)}
         ${renderAuditSection('DKV Reports', audit.dkvReports, state.url)}
         ${renderAuditSection('Completed Classic/PID bills', audit.completedBills, state.url)}
+        ${renderAuditSection('Complete without Completed Date', audit.noCompletedDate, state.url, { okText: '✓ all dated', issueText: 'missing a Completed Date' })}
       </div>
 
       <!-- Tag reference (collapsible) -->
